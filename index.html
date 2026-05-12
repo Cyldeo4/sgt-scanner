@@ -1,4 +1,4 @@
- F<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
   <base target="_top">
@@ -47,7 +47,7 @@
   </div>
 
   <script>
-    // --- PASTE YOUR GOOGLE URL BELOW ---
+    // --- YOUR GOOGLE URL ---
     const scriptURL = "https://script.google.com/macros/s/AKfycbzpCs9al3x-Voms9qBtYdC1ie7C7w4-V-JvBuh9DgBmXpDBk5gq-xmrsRFrLT2q8mr98w/exec";
 
     const output = document.getElementById("output");
@@ -62,7 +62,6 @@
         startBtn.disabled = true;
         startBtn.innerHTML = "⏳ STARTING...";
         
-        // Start decoding from the video element
         await codeReader.decodeFromVideoDevice(undefined, 'preview', (result, err) => {
           if (result) {
             handleScan(result.getText());
@@ -83,31 +82,30 @@
     }
 
     async function handleScan(scannedCode) {
-      // Temporarily stop to avoid multiple scans
       codeReader.reset();
       scannerStarted = false;
       
+      startBtn.style.visibility = "hidden"; // Hide button while processing
       output.innerHTML = "⏳ PROCESSING...";
       output.style.color = "#00d4ff";
 
       try {
-        const response = await fetch(scriptURL, {
+        await fetch(scriptURL, {
           method: "POST",
-          mode: "no-cors", // Crucial for talking to Google from outside
+          mode: "no-cors", 
           body: JSON.stringify({ ticketCode: scannedCode })
         });
 
-        // Since no-cors doesn't allow reading the response, 
-        // we assume success if the fetch completes.
         output.innerHTML = "✅ SCAN SENT\nCheck Sheet for Status";
         output.style.color = "#22ff88";
 
       } catch (err) {
-        output.innerHTML = "❌ SYNC ERROR\nCheck Internet Connection";
+        output.innerHTML = "❌ SYNC ERROR\nCheck Connection";
         output.style.color = "#ff2d55";
       }
 
       setTimeout(() => {
+        startBtn.style.visibility = "visible";
         startBtn.innerHTML = "📷 SCAN AGAIN";
         startBtn.disabled = false;
       }, 2000);
