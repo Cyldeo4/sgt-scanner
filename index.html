@@ -23,10 +23,7 @@
       margin-bottom: 20px;
     }
     h1 { font-size: 1.4rem; letter-spacing: 2px; border-bottom: 1px solid #00d4ff; padding-bottom: 12px; }
-    #preview {
-      width: 100%; border-radius: 8px; border: 1px solid #222;
-      background: black; min-height: 300px;
-    }
+    #preview { width: 100%; border-radius: 8px; border: 1px solid #222; background: black; min-height: 300px; }
     #output { margin-top: 18px; min-height: 50px; font-weight: bold; white-space: pre-line; }
     .btn {
       width: 100%; margin-top: 10px; padding: 15px;
@@ -35,39 +32,58 @@
       text-transform: uppercase; font-size: 1rem;
     }
     .btn:active { background: rgba(0, 212, 255, 0.2); }
+    #user-display { font-size: 0.8rem; margin-bottom: 10px; color: #ffaa00; }
+    .btn-small { font-size: 0.6rem; padding: 5px; margin-top: 20px; border-color: #666; color: #666; width: auto; }
   </style>
 </head>
 <body>
 
   <div class="container">
     <h1>SGT_SCAN_v1.2</h1>
+    <div id="user-display">Checking operator...</div>
     <video id="preview" playsinline muted></video>
     <div id="output">SYSTEM_READY...</div>
     <button class="btn" id="start-btn">📷 ACTIVATE CAMERA</button>
   </div>
+  
+  <button class="btn btn-small" id="switch-user-btn">LOGOUT / SWITCH OPERATOR</button>
 
   <script>
-    // --- YOUR GOOGLE URL ---
     const scriptURL = "https://script.google.com/macros/s/AKfycbzpCs9al3x-Voms9qBtYdC1ie7C7w4-V-JvBuh9DgBmXpDBk5gq-xmrsRFrLT2q8mr98w/exec";
 
     const output = document.getElementById("output");
     const startBtn = document.getElementById("start-btn");
     const previewVideo = document.getElementById("preview");
+    const userDisplay = document.getElementById("user-display");
+    const switchBtn = document.getElementById("switch-user-btn");
     
     let codeReader = new ZXing.BrowserMultiFormatReader();
     let scannerStarted = false;
+    let operatorName = localStorage.getItem("sgt_operator");
+
+    // --- LOGIN LOGIC ---
+    function checkLogin() {
+      if (!operatorName) {
+        let name = prompt("Enter your name (Operator):");
+        if (name && name.trim() !== "") {
+          operatorName = name.trim();
+          localStorage.setItem("sgt_operator", operatorName);
+        } else {
+          checkLogin(); // Keep asking until they provide a name
+        }
+      }
+      userDisplay.innerHTML = "OPERATOR: " + operatorName.toUpperCase();
+    }
+
+    checkLogin();
 
     async function startScanner() {
       try {
         startBtn.disabled = true;
         startBtn.innerHTML = "⏳ STARTING...";
-        
-        await codeReader.decodeFromVideoDevice(undefined, 'preview', (result, err) => {
-          if (result) {
-            handleScan(result.getText());
-          }
+        await codeReader.decodeFromVideoDevice(undefined, 'preview', (result) => {
+          if (result) handleScan(result.getText());
         });
-
         scannerStarted = true;
         startBtn.disabled = false;
         startBtn.innerHTML = "🔴 STOP CAMERA";
@@ -84,8 +100,7 @@
     async function handleScan(scannedCode) {
       codeReader.reset();
       scannerStarted = false;
-      
-      startBtn.style.visibility = "hidden"; // Hide button while processing
+      startBtn.style.visibility = "hidden";
       output.innerHTML = "⏳ PROCESSING...";
       output.style.color = "#00d4ff";
 
@@ -93,14 +108,15 @@
         await fetch(scriptURL, {
           method: "POST",
           mode: "no-cors", 
-          body: JSON.stringify({ ticketCode: scannedCode })
+          body: JSON.stringify({ 
+            ticketCode: scannedCode,
+            operator: operatorName // <--- SENDING THE NAME TO GOOGLE
+          })
         });
-
         output.innerHTML = "✅ SCAN SENT\nCheck Sheet for Status";
         output.style.color = "#22ff88";
-
       } catch (err) {
-        output.innerHTML = "❌ SYNC ERROR\nCheck Connection";
+        output.innerHTML = "❌ SYNC ERROR";
         output.style.color = "#ff2d55";
       }
 
@@ -119,6 +135,11 @@
       } else {
         startScanner();
       }
+    });
+
+    switchBtn.addEventListener("click", () => {
+      localStorage.removeItem("sgt_operator");
+      location.reload();
     });
   </script>
 </body>
