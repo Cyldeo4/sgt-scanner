@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>SGT Scanner v1.2</title>
+  <script src="https://unpkg.com/@zxing/library@0.19.1"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px;
+      background: #0a0a0a; color: #00d4ff;
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh; display: flex;
+      flex-direction: column; align-items: center;
+    }
+    .container {
+      width: 90%; max-width: 420px;
+      border: 1px solid #00d4ff; padding: 24px;
+      background: rgba(0, 212, 255, 0.05);
+      box-shadow: 0 0 25px rgba(0, 212, 255, 0.2);
+      border-radius: 10px; text-align: center;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 1.4rem; letter-spacing: 2px; border-bottom: 1px solid #00d4ff; padding-bottom: 12px; }
+    #preview {
+      width: 100%; border-radius: 8px; border: 1px solid #222;
+      background: black; min-height: 300px;
+    }
+    #output { margin-top: 18px; min-height: 50px; font-weight: bold; white-space: pre-line; }
+    .btn {
+      width: 100%; margin-top: 10px; padding: 15px;
+      border: 1px solid #00d4ff; background: transparent;
+      color: #00d4ff; font-weight: bold; cursor: pointer;
+      text-transform: uppercase; font-size: 1rem;
+    }
+    .btn:active { background: rgba(0, 212, 255, 0.2); }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>SGT_SCAN_v1.2</h1>
+    <video id="preview" playsinline muted></video>
+    <div id="output">SYSTEM_READY...</div>
+    <button class="btn" id="start-btn">📷 ACTIVATE CAMERA</button>
+  </div>
+
+  <script>
+    // --- PASTE YOUR GOOGLE URL BELOW ---
+    const scriptURL = "https://script.google.com/macros/s/AKfycbyhonjp4JYNglVbMx_tY4v4exEalZevQYTCcGX886SYcmgxg7teve61qK2T6_Brx45B4A/exec";
+
+    const output = document.getElementById("output");
+    const startBtn = document.getElementById("start-btn");
+    const previewVideo = document.getElementById("preview");
+    
+    let codeReader = new ZXing.BrowserMultiFormatReader();
+    let scannerStarted = false;
+
+    async function startScanner() {
+      try {
+        startBtn.disabled = true;
+        startBtn.innerHTML = "⏳ STARTING...";
+        
+        // Start decoding from the video element
+        await codeReader.decodeFromVideoDevice(undefined, 'preview', (result, err) => {
+          if (result) {
+            handleScan(result.getText());
+          }
+        });
+
+        scannerStarted = true;
+        startBtn.disabled = false;
+        startBtn.innerHTML = "🔴 STOP CAMERA";
+        output.innerHTML = "✅ CAMERA ACTIVE\nScan a ticket QR";
+        output.style.color = "#22ff88";
+      } catch (err) {
+        output.innerHTML = "❌ CAMERA ERROR\n" + err.message;
+        output.style.color = "#ff2d55";
+        startBtn.disabled = false;
+        startBtn.innerHTML = "📷 ACTIVATE CAMERA";
+      }
+    }
+
+    async function handleScan(scannedCode) {
+      // Temporarily stop to avoid multiple scans
+      codeReader.reset();
+      scannerStarted = false;
+      
+      output.innerHTML = "⏳ PROCESSING...";
+      output.style.color = "#00d4ff";
+
+      try {
+        const response = await fetch(scriptURL, {
+          method: "POST",
+          mode: "no-cors", // Crucial for talking to Google from outside
+          body: JSON.stringify({ ticketCode: scannedCode })
+        });
+
+        // Since no-cors doesn't allow reading the response, 
+        // we assume success if the fetch completes.
+        output.innerHTML = "✅ SCAN SENT\nCheck Sheet for Status";
+        output.style.color = "#22ff88";
+
+      } catch (err) {
+        output.innerHTML = "❌ SYNC ERROR\nCheck Internet Connection";
+        output.style.color = "#ff2d55";
+      }
+
+      setTimeout(() => {
+        startBtn.innerHTML = "📷 SCAN AGAIN";
+        startBtn.disabled = false;
+      }, 2000);
+    }
+
+    startBtn.addEventListener("click", () => {
+      if (scannerStarted) {
+        codeReader.reset();
+        scannerStarted = false;
+        startBtn.innerHTML = "📷 ACTIVATE CAMERA";
+      } else {
+        startScanner();
+      }
+    });
+  </script>
+</body>
+</html>
