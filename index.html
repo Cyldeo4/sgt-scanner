@@ -3,87 +3,265 @@
 <head>
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SGT Scanner v1.2</title>
+  <title>SGT Scanner v2.0</title>
   <script src="https://unpkg.com/@zxing/library@0.19.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 20px; background: #0a0a0a; color: #00d4ff; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; }
     .container { width: 90%; max-width: 420px; border: 1px solid #00d4ff; padding: 24px; background: rgba(0, 212, 255, 0.05); border-radius: 10px; text-align: center; }
-    #preview { width: 100%; border-radius: 8px; background: black; min-height: 300px; }
-    #output { margin-top: 18px; font-weight: bold; white-space: pre-line; }
-    .btn { width: 100%; margin-top: 10px; padding: 15px; border: 1px solid #00d4ff; background: transparent; color: #00d4ff; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+    h1 { font-size: 1.1rem; margin-bottom: 4px; }
+    .stage-label { font-size: 0.7rem; color: #555; letter-spacing: 2px; margin-bottom: 10px; text-transform: uppercase; }
+    #preview { width: 100%; border-radius: 8px; background: black; min-height: 300px; object-fit: cover; }
+    #snapshot { display: none; }
+    #output { margin-top: 18px; font-weight: bold; white-space: pre-line; min-height: 24px; }
+    .btn { width: 100%; margin-top: 10px; padding: 15px; border: 1px solid #00d4ff; background: transparent; color: #00d4ff; font-weight: bold; cursor: pointer; text-transform: uppercase; font-family: 'Courier New', monospace; font-size: 1rem; }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn.primary { background: #00d4ff; color: #0a0a0a; }
+    .btn.danger { border-color: #ff2d55; color: #ff2d55; }
     #user-display { font-size: 0.8rem; margin-bottom: 10px; color: #ffaa00; }
+    .ticket-info { margin-top: 14px; padding: 12px; border: 1px solid #1a3a40; border-radius: 6px; background: rgba(0,212,255,0.03); text-align: left; font-size: 0.8rem; line-height: 1.6; display: none; }
+    .ticket-info.show { display: block; }
+    .ticket-info b { color: #22ff88; }
+    #codeField {
+      width: 100%; margin-top: 14px; padding: 14px; font-family: 'Courier New', monospace; font-size: 1.1rem;
+      letter-spacing: 2px; text-align: center; text-transform: uppercase; background: #000;
+      border: 1px solid #00d4ff; color: #00d4ff; border-radius: 6px;
+    }
+    #codeField.valid { border-color: #22ff88; color: #22ff88; box-shadow: 0 0 6px rgba(34,255,136,0.4); }
+    #codeField.invalid { border-color: #ff2d55; color: #ff2d55; }
+    .progress { width: 100%; height: 4px; background: #1a1a1a; margin-top: 10px; border-radius: 2px; overflow: hidden; display: none; }
+    .progress.active { display: block; }
+    .progress .bar { height: 100%; width: 0%; background: #00d4ff; transition: width 0.2s; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>SGT_SCAN_v1.2</h1>
+    <h1>SGT_SCAN_v2.0</h1>
+    <div class="stage-label" id="stageLabel">STAGE 1 / 2 — TICKET QR</div>
     <div id="user-display">Checking operator...</div>
-    <video id="preview" playsinline muted></video>
+
+    <video id="preview" playsinline muted autoplay></video>
+    <canvas id="snapshot"></canvas>
+
     <div id="output">SYSTEM_READY...</div>
+
+    <div class="ticket-info" id="ticketInfo"></div>
+
+    <input type="text" id="codeField" class="hidden" placeholder="S1 000 000 000" maxlength="14">
+
+    <div class="progress" id="progress"><div class="bar" id="progressBar"></div></div>
+
     <button class="btn" id="start-btn">📷 ACTIVATE CAMERA</button>
+    <button class="btn" id="capture-card-btn" disabled style="display:none;">⎙ CAPTURE CARD</button>
+    <button class="btn primary" id="confirm-btn" disabled style="display:none;">✅ CONFIRM &amp; SAVE</button>
+    <button class="btn danger" id="reset-btn" style="display:none;">↺ NEXT GUEST</button>
   </div>
 
   <script>
-    const scriptURL = "https://script.google.com/macros/s/AKfycbyvyogNUThpdxws_H8fcLEEaJ4W6Do_sXFq62eX7tmkZd6qhG1U2TKSryTVxCjGSeYs/exec";
-    const output = document.getElementById("output");
-    const startBtn = document.getElementById("start-btn");
-    const previewVideo = document.getElementById("preview");
-    const userDisplay = document.getElementById("user-display");
-    
-    let codeReader = new ZXing.BrowserMultiFormatReader();
-    let scannerStarted = false;
-    let operatorName = localStorage.getItem("sgt_operator");
+    // Single endpoint, used for both stages via the "action" field.
+    const scriptURL = "https://script.google.com/macros/s/AKfycbxvpdm4PwO7WMGrdsgJco2NJPPBLPIR_H4U_Vf6S91YfwbjUKZ2_btHN55u7TLPDiVJ/exec";
 
+    const CODE_PATTERN = /^[A-Z]\d\s\d{3}\s\d{3}\s\d{3}$/; // e.g. S1 001 017 961
+
+    const output = document.getElementById("output");
+    const stageLabel = document.getElementById("stageLabel");
+    const startBtn = document.getElementById("start-btn");
+    const captureCardBtn = document.getElementById("capture-card-btn");
+    const confirmBtn = document.getElementById("confirm-btn");
+    const resetBtn = document.getElementById("reset-btn");
+    const previewVideo = document.getElementById("preview");
+    const snapshotCanvas = document.getElementById("snapshot");
+    const userDisplay = document.getElementById("user-display");
+    const ticketInfo = document.getElementById("ticketInfo");
+    const codeField = document.getElementById("codeField");
+    const progress = document.getElementById("progress");
+    const progressBar = document.getElementById("progressBar");
+
+    let codeReader = new ZXing.BrowserMultiFormatReader();
+    let stream = null;
+    let stage = "ticket"; // "ticket" -> "card" -> "done"
+    let currentTicket = null; // { ticketCode, name, email, orderId }
+
+    let operatorName = localStorage.getItem("sgt_operator");
     if (!operatorName) {
       operatorName = prompt("Enter your name (Operator):");
       localStorage.setItem("sgt_operator", operatorName);
     }
     userDisplay.innerHTML = "OPERATOR: " + operatorName.toUpperCase();
 
-    async function startScanner() {
+    function setOutput(text, color) {
+      output.innerHTML = text;
+      output.style.color = color || "#00d4ff";
+    }
+
+    // ---------- STAGE 1: QR ticket scan ----------
+    async function startTicketScan() {
       try {
         startBtn.innerHTML = "⏳ LOADING...";
         await codeReader.decodeFromVideoDevice(undefined, 'preview', (result) => {
-          if (result) handleScan(result.getText());
+          if (result) handleTicketScan(result.getText());
         });
-        scannerStarted = true;
-        startBtn.innerHTML = "🔴 STOP CAMERA";
-        output.innerHTML = "✅ CAMERA ACTIVE";
-        output.style.color = "#22ff88";
+        startBtn.style.display = "none";
+        setOutput("✅ CAMERA ACTIVE — scan ticket QR", "#22ff88");
       } catch (err) {
-        output.innerHTML = "❌ CAMERA ERROR: " + err.message;
+        setOutput("❌ CAMERA ERROR: " + err.message, "#ff2d55");
         startBtn.innerHTML = "📷 ACTIVATE CAMERA";
       }
     }
 
-    async function handleScan(code) {
+    async function handleTicketScan(code) {
       codeReader.reset();
-      output.innerHTML = "⏳ PROCESSING...";
-      output.style.color = "#00d4ff";
+      setOutput("⏳ CHECKING TICKET...", "#00d4ff");
+      try {
+        const response = await fetch(scriptURL, {
+          method: "POST",
+          body: JSON.stringify({ action: "checkTicket", ticketCode: code, operator: operatorName })
+        });
+        const res = await response.json();
+        if (res.result === "valid") {
+          currentTicket = { ticketCode: code, name: res.name, email: res.email, orderId: res.orderId };
+          setOutput("✅ TICKET VALID", "#22ff88");
+          ticketInfo.innerHTML = "<b>" + res.name + "</b><br>" + (res.email || "") + "<br>Order: " + (res.orderId || "");
+          ticketInfo.classList.add("show");
+          goToCardStage();
+        } else {
+          setOutput("❌ " + (res.message || "INVALID TICKET"), "#ff2d55");
+          setTimeout(() => { startTicketRescan(); }, 2500);
+        }
+      } catch (err) {
+        setOutput("❌ SYNC ERROR", "#ff2d55");
+        setTimeout(() => { startTicketRescan(); }, 2500);
+      }
+    }
+
+    function startTicketRescan() {
+      setOutput("📷 SCAN NEXT TICKET", "#00d4ff");
+      codeReader.decodeFromVideoDevice(undefined, 'preview', (result) => {
+        if (result) handleTicketScan(result.getText());
+      });
+    }
+
+    // ---------- STAGE 2: NFC card OCR ----------
+    function goToCardStage() {
+      stage = "card";
+      stageLabel.textContent = "STAGE 2 / 2 — NFC CARD";
+      codeField.classList.remove("hidden");
+      captureCardBtn.style.display = "block";
+      captureCardBtn.disabled = false;
+      confirmBtn.style.display = "block";
+      resetBtn.style.display = "block";
+    }
+
+    function normalizeCode(raw) {
+      let cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (cleaned.length >= 11) {
+        let head = cleaned.slice(0, 2);
+        let tail = cleaned.slice(2, 11).replace(/O/g, "0").replace(/[IL]/g, "1").replace(/B/g, "8").replace(/S/g, "5");
+        cleaned = head + tail;
+      }
+      if (cleaned.length === 11) {
+        return cleaned.slice(0,2) + " " + cleaned.slice(2,5) + " " + cleaned.slice(5,8) + " " + cleaned.slice(8,11);
+      }
+      return raw.toUpperCase().trim();
+    }
+
+    function validateCode() {
+      const val = codeField.value.trim();
+      const ok = CODE_PATTERN.test(val);
+      codeField.classList.toggle("valid", ok);
+      codeField.classList.toggle("invalid", !ok && val.length > 0);
+      confirmBtn.disabled = !ok;
+      return ok;
+    }
+    codeField.addEventListener("input", validateCode);
+
+    async function captureCard() {
+      const vw = previewVideo.videoWidth, vh = previewVideo.videoHeight;
+      if (!vw) { setOutput("❌ VIDEO NOT READY", "#ff2d55"); return; }
+      snapshotCanvas.width = vw;
+      snapshotCanvas.height = vh;
+      snapshotCanvas.getContext("2d").drawImage(previewVideo, 0, 0, vw, vh);
+
+      captureCardBtn.disabled = true;
+      progress.classList.add("active");
+      progressBar.style.width = "0%";
+      setOutput("⏳ READING CARD...", "#00d4ff");
+
+      try {
+        const result = await Tesseract.recognize(snapshotCanvas, "eng", {
+          logger: (m) => { if (m.progress) progressBar.style.width = Math.round(m.progress * 100) + "%"; }
+        });
+        const text = result.data.text || "";
+        const match = text.match(/[A-Za-z]\s?\d[\s\-]?\d{3}[\s\-]?\d{3}[\s\-]?\d{3}/);
+        let guess = match ? match[0] : text.trim().split("\n")[0];
+        guess = normalizeCode(guess);
+
+        codeField.value = guess;
+        const ok = validateCode();
+        setOutput(ok ? "✅ CODE DETECTED — confirm below" : "⚠️ UNCLEAR READ — correct manually", ok ? "#22ff88" : "#ffaa00");
+      } catch (err) {
+        setOutput("❌ OCR ERROR: " + err.message, "#ff2d55");
+      } finally {
+        progress.classList.remove("active");
+        captureCardBtn.disabled = false;
+      }
+    }
+
+    // ---------- STAGE 3: confirm + save ----------
+    async function confirmAndSave() {
+      if (!validateCode() || !currentTicket) return;
+      const cardCode = codeField.value.trim();
+
+      confirmBtn.disabled = true;
+      setOutput("⏳ SAVING...", "#00d4ff");
 
       try {
         const response = await fetch(scriptURL, {
           method: "POST",
-          body: JSON.stringify({ ticketCode: code, operator: operatorName })
+          body: JSON.stringify({
+            action: "collectCard",
+            ticketCode: currentTicket.ticketCode,
+            cardCode: cardCode,
+            operator: operatorName
+          })
         });
         const res = await response.json();
-        if (res.result === "valid") {
-          output.innerHTML = "✅ ACCESS GRANTED\n" + res.name;
-          output.style.color = "#22ff88";
+        if (res.result === "ok") {
+          setOutput("✅ SAVED — HAND OVER CARD\n" + currentTicket.name + "\n" + cardCode, "#22ff88");
+          captureCardBtn.style.display = "none";
+          confirmBtn.style.display = "none";
         } else {
-          output.innerHTML = "❌ " + (res.message || "INVALID");
-          output.style.color = "#ff2d55";
+          setOutput("❌ " + (res.message || "SAVE FAILED"), "#ff2d55");
+          confirmBtn.disabled = false;
         }
-      } catch (err) { output.innerHTML = "❌ SYNC ERROR"; }
-      
-      setTimeout(() => { startBtn.innerHTML = "📷 SCAN AGAIN"; scannerStarted = false; }, 3000);
+      } catch (err) {
+        setOutput("❌ SYNC ERROR", "#ff2d55");
+        confirmBtn.disabled = false;
+      }
     }
 
-    startBtn.addEventListener("click", () => {
-      if (scannerStarted) { codeReader.reset(); scannerStarted = false; startBtn.innerHTML = "📷 ACTIVATE CAMERA"; }
-      else { startScanner(); }
-    });
+    function resetForNextGuest() {
+      stage = "ticket";
+      currentTicket = null;
+      stageLabel.textContent = "STAGE 1 / 2 — TICKET QR";
+      ticketInfo.classList.remove("show");
+      ticketInfo.innerHTML = "";
+      codeField.value = "";
+      codeField.classList.add("hidden");
+      codeField.classList.remove("valid", "invalid");
+      captureCardBtn.style.display = "none";
+      confirmBtn.style.display = "none";
+      confirmBtn.disabled = true;
+      resetBtn.style.display = "none";
+      startTicketRescan();
+    }
+
+    startBtn.addEventListener("click", startTicketScan);
+    captureCardBtn.addEventListener("click", captureCard);
+    confirmBtn.addEventListener("click", confirmAndSave);
+    resetBtn.addEventListener("click", resetForNextGuest);
   </script>
 </body>
 </html>
