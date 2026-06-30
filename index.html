@@ -121,9 +121,23 @@
         });
         const res = await response.json();
         if (res.result === "valid") {
-          currentTicket = { ticketCode: code, name: res.name, email: res.email, orderId: res.orderId };
+          // Added ticketType into the state object for consistency
+          currentTicket = { 
+            ticketCode: code, 
+            name: res.name, 
+            email: res.email, 
+            orderId: res.orderId,
+            ticketType: res.ticketType 
+          };
+          
           setOutput("✅ TICKET VALID", "#22ff88");
-          ticketInfo.innerHTML = "<b>" + res.name + "</b><br>" + (res.email || "") + "<br>Order: " + (res.orderId || "") + "<br>Type: " + (res.ticketType || "—");
+          
+          // Ticket Type has been moved to display right under the Order ID
+          ticketInfo.innerHTML = "<b>" + res.name + "</b><br>" + 
+                                 (res.email || "") + "<br>" +
+                                 "Order: " + (res.orderId || "—") + "<br>" + 
+                                 "Type: " + (res.ticketType || "—");
+                                 
           ticketInfo.classList.add("show");
           goToCardStage();
         } else {
