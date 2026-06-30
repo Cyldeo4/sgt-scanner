@@ -123,7 +123,7 @@
         if (res.result === "valid") {
           currentTicket = { ticketCode: code, name: res.name, email: res.email, orderId: res.orderId };
           setOutput("✅ TICKET VALID", "#22ff88");
-          ticketInfo.innerHTML = "<b>" + res.name + "</b><br>" + (res.email || "") + "<br>Order: " + (res.orderId || "");
+          ticketInfo.innerHTML = "<b>" + res.name + "</b><br>" + (res.email || "") + "<br>Order: " + (res.orderId || "") + "<br>Type: " + (res.ticketType || "—");
           ticketInfo.classList.add("show");
           goToCardStage();
         } else {
